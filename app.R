@@ -12,6 +12,7 @@ library(shinydashboard)
 library(DT)
 library(plotly)
 library(tidyverse)
+library(caret)
 
 
 ui <- dashboardPage(skin = "green",
@@ -22,9 +23,9 @@ ui <- dashboardPage(skin = "green",
             menuItem("Data", tabName = "data", icon = icon("data")),
             menuItem("Data Exploration", tabName = "eda", icon = icon("eda")),
             menuItem("Modeling", tabName = "model", icon = icon("model"), 
-                     menuSubItem("Modeling Info", tabname = "info", icon = icon("info")),
-                     menuSubItem("Model Fit", tabname = "fit", icon = icon("fit")),
-                     menuSubItem("Predictions", tabname = "pred", icon = icon("pred")))
+                     menuSubItem("Modeling Info", tabName = "info", icon = icon("info")),
+                     menuSubItem("Model Fit", tabName = "fit", icon = icon("fit")),
+                     menuSubItem("Predictions", tabName = "pred", icon = icon("pred")))
                 )
             ),
     dashboardBody(
@@ -32,6 +33,7 @@ ui <- dashboardPage(skin = "green",
             tabItem("about",
                 fluidPage(
                     h1("The Euro/US Dollar Exchange Rate"),
+                    #image_read("Exchange Rates.jpeg"),
                     p("The purpose of this app is to model the exchange rate between the Euro currency and the US Dollar. 
                       There are two competing ideas on the ability to model financial instruments - including currency 
                       exchange rates. The first is called the ",strong("Efficient Market Hypothesis"), " which basically 
@@ -180,18 +182,101 @@ ui <- dashboardPage(skin = "green",
                     h1("Modeling")
             ),
             tabItem("info",
-                    fluidPage(
-                        h1("Modeling Information")
-                    ) 
+                    h1("Modeling Information"),
+                    p("There are three types of models used in this analysis: A linear regression model, a regression 
+                      tree model and a random forest model. It is expected that the best fit will likely be the random 
+                      forest model since it has a tendency to pick up functional forms very well. I will begin with a 
+                      brief discussion of each model.", style = "font-size:20px;"),
+                    br(),
+                    h3("Linear Regression"),
+                    p("Linear Regression models assume a linear relationship between the predictors specified and 
+                      the response variable. It fits the model by estimating coefficients on each predictor variable 
+                      and an intercept that minimize the sum of the squared distances between the prediction and the 
+                      actual observed response value. One can specify nonlinear relationships between predictors and 
+                      the response by transforming predictors (square, square root, log, etc.), but this must usually 
+                      be done manually.", style = "font-size:20px;"),
+                    br(),
+                    h3("Regression Tree"),
+                    p("Regression trees are models where an algorithm sequentially chooses break points in the data 
+                      to create separate estimates for. For instance, the model chooses an x* and has an estimate 
+                      for the response when X < x* and another estimate for the response when X > x*. It chooses x* 
+                      by finding the point that minimizes the squared residuals. The tree chooses new break points 
+                      repeatedly until the chosen parameters call for it to stop.", style = "font-size:20px;"),
+                    br(),
+                    h3("Random Forest"),
+                    p("Bagging is a tree method that uses bootstrapping to select the tree by randomly sampling with 
+                      replacement n times from the dataset and then averaging a series of bootstrappedc models to 
+                      arrive at an estimate. Random Forest is a form of bagging where the predictor variables are 
+                      randomly subsetted and models fit to prevent strong predictors from overpowering less-powerful
+                      but still helpful predictors.", style = "font-size:20px;")
             ),
             tabItem("fit",
                     fluidPage(
-                        h1("Model Fit")
+                        h1("Model Fit"),
+                        br(),
+                        p("Input the proportion of the sample to be used for training.", style = "font-size:20px;"),
+                        br(),
+                        sliderInput("trainData", "Proportion of data for training the models",
+                                    min = 0.3, max = 0.99, value = 0.75, step = 0.01),
+                        br(),
+                        actionButton("runButton", "Run"),
+                        br(),
+                        br(),
+                        h3("Linear Regression Model Output"),
+                        br(),
+                        tableOutput("dataset3"),
+                        br(),
+                        br(),
+                        h3("Regression Tree Model Output"),
+                        br(),
+                        tableOutput("dataset4"),
+                        br(),
+                        br(),
+                        h3("Random Forest Model Output"),
+                        br(),
+                        tableOutput("dataset5"),
+                        br(),
+                        br(),
+                        h3("Linear Regression Model Holdout Results"),
+                        br(),
+                        tableOutput("dataset6"),
+                        br(),
+                        br(),
+                        h3("Regression Tree Model Holdout Results"),
+                        br(),
+                        tableOutput("dataset7"),
+                        br(),
+                        br(),
+                        h3("Random Forest Model Holdout Results"),
+                        br(),
+                        tableOutput("dataset8")
                     ) 
             ),
             tabItem("pred",
                     fluidPage(
-                        h1("Predictions")
+                        h1("Predictions"),
+                        br(),
+                        p("Enter your own values for each variable and see what the models predict!"),
+                        br(),
+                        br(),
+                        numericInput("num_AR1", "AR1", 0, min = -0.05, max = 0.05),
+                        numericInput("num_AR2", "AR2", 0, min = -0.05, max = 0.05),
+                        numericInput("num_AR3", "AR3", 0, min = -0.05, max = 0.05),
+                        numericInput("num_EMA05", "EMA05", 0, min = -0.05, max = 0.05),
+                        numericInput("num_EMA10", "EMA10", 0, min = -0.05, max = 0.05),
+                        numericInput("num_CMO24", "CMO24", 0, min = -1, max = 1),
+                        numericInput("num_CMO48", "CMO48", 0, min = -1, max = 1),
+                        numericInput("num_MACD", "MACD", 0, min = -0.005, max = 0.005),
+                        br(),
+                        br(),
+                        h4("Linear Regression Prediction"),
+                        textOutput("predLM"),
+                        br(),
+                        h4("Regression Tree Prediction"),
+                        textOutput("predTR"),
+                        br(),
+                        h4("Random Forest Prediction"),
+                        textOutput("predRF")
                     ) 
             )
 
@@ -199,7 +284,7 @@ ui <- dashboardPage(skin = "green",
     )
 )
 
-# Define server logic required to draw a histogram
+
 server <- function(input, output, session) {
     
     
@@ -326,9 +411,89 @@ server <- function(input, output, session) {
     }, digits = 7)
     
     
-}
-
+    trainData <- reactive({
+        head(data.frame(df3()), round(nrow(df3()) * input$trainData), 0)
+    })
     
+    testData <- reactive({
+        head(data.frame(df3()), round(nrow(df3()) * (1 - input$trainData)), 0)
+    })
+    
+    testY <- reactive({
+        testData %>% select(y)
+    })
+    
+    observeEvent(input$runButton, {    
+        
+        fit_lm <- train(y ~ .,
+                        data = trainData(),
+                        method = "lm",
+                        trControl = trainControl(method = "cv", number = 5
+                        )
+        )
+        
+        fit_tr <- train(y ~ .,
+                        data = trainData(),
+                        method = "rpart",
+                        trControl = trainControl(method = "cv", number = 5),
+                        tuneLength = 10
+                        
+        )
+        
+        fit_rf <- train(y ~ .,
+                        data = trainData(),
+                        method = "rf",
+                        trControl = trainControl(method = "cv", number = 5),
+                        tuneGrid = data.frame(mtry = 3:6)
+                        
+        )
+        
+        output$dataset3 <- renderTable({
+            fit_lm$results
+        }, digits = 6)
+        
+        output$dataset4 <- renderTable({
+            fit_tr$results
+        }, digits = 6)
+        
+        output$dataset5 <- renderTable({
+            fit_rf$results
+        }, digits = 6)
+        
+        pred_lm <- predict(fit_lm, newdata = testData())
+        output$dataset6 <- renderTable({
+            postResample(pred_lm, testY())
+        }, digits = 6)
+        
+        pred_tr <- predict(fit_tr, newdata = testData())
+        output$dataset7 <- renderTable({
+            postResample(pred_tr, testY())
+        }, digits = 6)
+        
+        pred_rf <- predict(fit_rf, newdata = testData())
+        output$dataset8 <- renderTable({
+            postResample(pred_rf, testY())
+        }, digits = 6)
+        
+    })
+    
+    preds <- reactive({
+        data.frame(AR1 = input$num_AR1,
+                   AR2 = input$num_AR2,
+                   AR3 = input$num_AR3,
+                   EMA05 = input$num_EMA05,
+                   EMA10 = input$num_EMA10,
+                   CMO24 = input$num_CMO24,
+                   CMO48 = input$num_CMO48,
+                   MACD = input$num_MACD
+                       ) %>% select(input$varList)
+        
+        output$predLM <- renderText({predict(fit_lm, newdata = preds)})
+        output$predTR <- renderText({predict(fit_tr, newdata = preds)})
+        output$predRF <- renderText({predict(fit_rf, newdata = preds)})
+    })
+    
+}
 
 # Run the application 
 shinyApp(ui = ui, server = server)
