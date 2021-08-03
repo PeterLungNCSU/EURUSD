@@ -12,6 +12,6 @@ library(plotly)
 library(tidyverse)
 library(caret)
 
-shiny::runGitHub("PeterLungNCSU", "EURUSD") 
+shiny::runGitHub("PeterLungNCSU/EURUSD", "app") 
 
 
